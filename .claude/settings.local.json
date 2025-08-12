@@ -1,0 +1,31 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(open index.html)",
+      "Bash(open setup_api_key.html)",
+      "Bash(screencapture:*)",
+      "Bash(open:*)",
+      "Bash(osascript:*)",
+      "mcp__serena__list_dir",
+      "mcp__serena__read_memory",
+      "mcp__filesystem__read_text_file",
+      "Bash(npx create-next-app@latest:*)",
+      "Bash(npm i:*)",
+      "Bash(npm run dev:*)",
+      "mcp__serena__search_for_pattern",
+      "Bash(npm run build:*)",
+      "Bash(netlify deploy:*)",
+      "Bash(netlify init:*)",
+      "Bash(gh repo create:*)",
+      "Bash(netlify link:*)",
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(netlify sites:create:*)",
+      "Bash(git init:*)",
+      "Bash(git add:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}
