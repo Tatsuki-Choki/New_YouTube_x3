@@ -13,35 +13,35 @@ const COLORS = {
 
 // --- 型定義 ---
 interface VideoRow {
-  videoId: string;
-  title: string;
-  channelId: string;
-  channelTitle: string;
-  publishedAt: string;
+  videoId;
+  title;
+  channelId;
+  channelTitle;
+  publishedAt;
   viewCount: number;
   likeCount?: number;
-  thumbnailUrl: string;
-  videoUrl: string;
-  channelUrl: string;
+  thumbnailUrl;
+  videoUrl;
+  channelUrl;
   subscriberCount?: number;
   hiddenSubscriberCount?: boolean;
-  country?: string;
+  country?;
   matchedRule: "3x" | "2x" | "1x" | "minViews" | "none";
   isShort?: boolean; // Shorts 判定
 }
 
 interface CommentRow {
-  videoId: string;
-  commentId: string;
-  parentId?: string | null;
-  authorDisplayName: string;
-  textOriginal: string;
+  videoId;
+  commentId;
+  parentId?;
+  authorDisplayName;
+  textOriginal;
   likeCount: number;
-  publishedAt: string;
-  updatedAt?: string;
+  publishedAt;
+  updatedAt?;
 }
 
-const COUNTRY_OPTIONS: { code: string; label: string }[] = [
+const COUNTRY_OPTIONS: { code; label }[] = [
   { code: "", label: "指定なし" },
   { code: "JP", label: "日本" },
   { code: "US", label: "アメリカ" },
@@ -58,10 +58,10 @@ type ShortsMode = "exclude" | "include" | "only"; // 既定 exclude
 type RatioThreshold = 1 | 2 | 3; // 登録者比のしきい値
 
 // --- ユーティリティ ---
-const storeKey = (k: string) => localStorage.setItem("yt_api_key", k);
+const storeKey = (k) => localStorage.setItem("yt_api_key", k);
 const loadKey = () => localStorage.getItem("yt_api_key") || "";
 
-function calcPublishedAfter(period: PeriodKey) {
+function calcPublishedAfter(period) {
   const d = new Date();
   if (period === "6m") d.setMonth(d.getMonth() - 6);
   else if (period === "1y") d.setFullYear(d.getFullYear() - 1);
@@ -71,7 +71,7 @@ function calcPublishedAfter(period: PeriodKey) {
 }
 
 // ISO8601期間(PT#H#M#S) → 秒
-function durationToSeconds(iso?: string): number | undefined {
+function durationToSeconds(iso?): number | undefined {
   if (!iso) return undefined;
   const m = iso.match(/^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$/);
   if (!m) return undefined;
@@ -88,11 +88,11 @@ function numberFormat(n?: number) {
 
 // CSV生成（テスト可能な純関数）
 function buildCSV(
-  headers: string[],
-  rows: any[],
-  selector: (row: any, key: string) => any
-): string {
-  const escape = (val: any) => {
+  headers,
+  rows,
+  selector: (row, key) => any
+) {
+  const escape = (val) => {
     if (val === null || val === undefined) return "";
     const s = String(val).replace(/"/g, '""');
     return `"${s}"`;
@@ -102,7 +102,7 @@ function buildCSV(
     .join("\n");
 }
 
-function downloadCSV(filename: string, rows: any[], headers: string[], selector: (row: any, key: string) => any) {
+function downloadCSV(filename, rows, headers, selector) {
   const csv = buildCSV(headers, rows, selector);
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
   const url = URL.createObjectURL(blob);
@@ -113,7 +113,7 @@ function downloadCSV(filename: string, rows: any[], headers: string[], selector:
   URL.revokeObjectURL(url);
 }
 
-async function testApiKey(key: string): Promise<{ ok: boolean; reason?: string }> {
+async function testApiKey(key): Promise<{ ok: boolean; reason? }> {
   try {
     const url = `https://www.googleapis.com/youtube/v3/i18nLanguages?part=snippet&key=${encodeURIComponent(key)}&maxResults=1`;
     const res = await fetch(url);
@@ -122,24 +122,24 @@ async function testApiKey(key: string): Promise<{ ok: boolean; reason?: string }
       return { ok: false, reason: body?.error?.message || `HTTP ${res.status}` };
     }
     return { ok: true };
-  } catch (e: any) {
+  } catch (e) {
     return { ok: false, reason: e?.message || "Network error" };
   }
 }
 
 // Shorts 判定の強化（60秒以下 もしくは #shorts タグ/ハッシュ）
-function isShortByHeuristic(v: any): boolean {
+function isShortByHeuristic(v) {
   const durationSec = durationToSeconds(v?.contentDetails?.duration);
   const shortByTime = typeof durationSec === "number" && durationSec <= 61; // 余裕を1秒持たせる
-  const title = (v?.snippet?.title || "") as string;
-  const description = (v?.snippet?.description || "") as string;
-  const tags: string[] = Array.isArray(v?.snippet?.tags) ? (v.snippet.tags as string[]) : [];
+  const title = (v?.snippet?.title || "");
+  const description = (v?.snippet?.description || "");
+  const tags = Array.isArray(v?.snippet?.tags) ? v.snippet.tags : [];
   const hasHashShorts = /#shorts/i.test(title) || /#shorts/i.test(description) || tags.some((t) => /shorts/i.test(t));
   return shortByTime || hasHashShorts;
 }
 
 // 比率しきい値の判定（テストしやすい純関数）
-function qualifiesByRatio(viewCount: number, subscriberCount: number | undefined, hidden: boolean, multiple: RatioThreshold): boolean {
+function qualifiesByRatio(viewCount, subscriberCount, hidden, multiple) {
   if (hidden) return false;
   if (typeof subscriberCount !== "number") return false;
   return viewCount >= multiple * subscriberCount;
@@ -147,28 +147,28 @@ function qualifiesByRatio(viewCount: number, subscriberCount: number | undefined
 
 // --- メインコンポーネント ---
 export default function App() {
-  const [apiKey, setApiKey] = useState<string>("");
-  const [keyVerified, setKeyVerified] = useState<boolean>(false);
-  const [verifying, setVerifying] = useState<boolean>(false);
-  const [verifyError, setVerifyError] = useState<string>("");
+  const [apiKey, setApiKey] = useState("");
+  const [keyVerified, setKeyVerified] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [verifyError, setVerifyError] = useState("");
 
-  const [query, setQuery] = useState<string>("");
-  const [minViews, setMinViews] = useState<string>("10000"); // 既定 10000
-  const [country, setCountry] = useState<string>("");
-  const [pageSize, setPageSize] = useState<number>(50); // 50 既定、20、10
-  const [includeHidden, setIncludeHidden] = useState<boolean>(false);
-  const [period, setPeriod] = useState<PeriodKey>("3y"); // 3年 既定
-  const [shortsMode, setShortsMode] = useState<ShortsMode>("exclude"); // 既定: 含めない
-  const [ratioThreshold, setRatioThreshold] = useState<RatioThreshold>(3); // 既定: 3倍
+  const [query, setQuery] = useState("");
+  const [minViews, setMinViews] = useState("10000"); // 既定 10000
+  const [country, setCountry] = useState("");
+  const [pageSize, setPageSize] = useState(50); // 50 既定、20、10
+  const [includeHidden, setIncludeHidden] = useState(false);
+  const [period, setPeriod] = useState("3y"); // 3年 既定
+  const [shortsMode, setShortsMode] = useState("exclude"); // 既定: 含めない
+  const [ratioThreshold, setRatioThreshold] = useState(3); // 既定: 3倍
 
-  const [loading, setLoading] = useState<boolean>(false);
-  const [error, setError] = useState<string>("");
-  const [videos, setVideos] = useState<VideoRow[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [videos, setVideos] = useState([]);
 
-  const [commentsLoadingFor, setCommentsLoadingFor] = useState<string | null>(null);
-  const [commentsByVideo, setCommentsByVideo] = useState<Record<string, CommentRow[]>>({});
-  const [selected, setSelected] = useState<Record<string, boolean>>({});
-  const [testReport, setTestReport] = useState<string[]>([]); // 簡易テストレポート
+  const [commentsLoadingFor, setCommentsLoadingFor] = useState(null);
+  const [commentsByVideo, setCommentsByVideo] = useState({});
+  const [selected, setSelected] = useState({});
+  const [testReport, setTestReport] = useState([]); // 簡易テストレポート
 
   // 初期ロードでlocalStorageからAPIキー復元 + セルフテスト
   useEffect(() => {
@@ -223,7 +223,7 @@ export default function App() {
         throw new Error(body?.error?.message || `search.list HTTP ${sres.status}`);
       }
       const sjson = await sres.json();
-      const items: any[] = sjson.items || [];
+      const items[] = sjson.items || [];
       const videoIds = items.map((it) => it?.id?.videoId).filter(Boolean);
       if (videoIds.length === 0) {
         setVideos([]);
@@ -247,7 +247,7 @@ export default function App() {
       const vjson = await vres.json();
 
       const channelIds = Array.from(
-        new Set((vjson.items || []).map((v: any) => v?.snippet?.channelId).filter(Boolean))
+        new Set((vjson.items || []).map((v) => v?.snippet?.channelId).filter(Boolean))
       );
 
       // channels.list
@@ -264,13 +264,13 @@ export default function App() {
         throw new Error(body?.error?.message || `channels.list HTTP ${cres.status}`);
       }
       const cjson = await cres.json();
-      const channelMap: Record<string, any> = {};
+      const channelMap = {};
       for (const c of cjson.items || []) channelMap[c.id] = c;
 
       const minViewsNum = Number(minViews || 0);
 
-      const rows: VideoRow[] = (vjson.items || [])
-        .map((v: any) => {
+      const rows = (vjson.items || [])
+        .map((v) => {
           const ch = channelMap[v?.snippet?.channelId];
           const subCount = ch?.statistics?.subscriberCount ? Number(ch.statistics.subscriberCount) : undefined;
           const hidden = Boolean(ch?.statistics?.hiddenSubscriberCount);
@@ -279,7 +279,7 @@ export default function App() {
           const lc = v?.statistics?.likeCount ? Number(v.statistics.likeCount) : undefined;
           const qualifiesRatio = qualifiesByRatio(vc, subCount, hidden, ratioThreshold);
           const qualifiesByMin = vc >= minViewsNum;
-          const matchedRule: VideoRow["matchedRule"] = qualifiesRatio
+          const matchedRule["matchedRule"] = qualifiesRatio
             ? ((`${ratioThreshold}x`) as VideoRow["matchedRule"])
             : qualifiesByMin
             ? "minViews"
@@ -303,29 +303,29 @@ export default function App() {
             isShort,
           } as VideoRow;
         })
-        .filter((r: VideoRow) => {
+        .filter((r) => {
           const countryOk = country ? r.country?.toUpperCase() === country.toUpperCase() : true;
           const viewsOk = r.viewCount >= Number(minViews || 0);
           const shortsOk = shortsMode === "include" ? true : shortsMode === "only" ? !!r.isShort : !r.isShort;
           // includeHidden=false → 比率しきい値で判定、true → 最低再生数のみ
           return countryOk && shortsOk && (includeHidden ? viewsOk : r.matchedRule === `${ratioThreshold}x`);
         })
-        .sort((a: VideoRow, b: VideoRow) => b.viewCount - a.viewCount);
+        .sort((a, b) => b.viewCount - a.viewCount);
 
       setVideos(rows);
-    } catch (e: any) {
+    } catch (e) {
       setError(e?.message || "検索に失敗しました");
     } finally {
       setLoading(false);
     }
   }
 
-  async function fetchAllComments(videoId: string) {
+  async function fetchAllComments(videoId) {
     if (!apiKey) return;
     setCommentsLoadingFor(videoId);
     try {
-      const all: CommentRow[] = [];
-      let pageToken: string | undefined = undefined;
+      const all = [];
+      let pageToken = undefined;
       do {
         const params = new URLSearchParams({
           key: apiKey,
@@ -373,7 +373,7 @@ export default function App() {
         pageToken = json.nextPageToken;
       } while (pageToken);
       setCommentsByVideo((prev) => ({ ...prev, [videoId]: all }));
-    } catch (e: any) {
+    } catch (e) {
       alert(e?.message || "コメント取得に失敗しました");
     } finally {
       setCommentsLoadingFor(null);
@@ -403,7 +403,7 @@ export default function App() {
       `videos_${now}.csv`,
       videos,
       headers,
-      (r: VideoRow, key: string) => {
+      (r, key) => {
         switch (key) {
           case "videoId":
             return r.videoId;
@@ -462,11 +462,11 @@ export default function App() {
       `comments_selected_${now}.csv`,
       rows,
       headers,
-      (r: CommentRow, key: string) => (r as any)[key]
+      (r, key) => (r)[key]
     );
   }
 
-  function exportCommentsCSV(videoId: string) {
+  function exportCommentsCSV(videoId) {
     const rows = commentsByVideo[videoId] || [];
     if (!rows.length) {
       alert("先にコメントを取得してください。");
@@ -487,17 +487,17 @@ export default function App() {
       `comments_${videoId}_${now}.csv`,
       rows,
       headers,
-      (r: CommentRow, key: string) => (r as any)[key]
+      (r, key) => (r)[key]
     );
   }
 
   // --- 簡易セルフテスト（起動時に一度実行） ---
   function runSelfTests() {
-    const logs: string[] = [];
+    const logs = [];
     try {
       // buildCSV の改行とエスケープ
       const h = ["a", "b"]; const rows = [{ a: '1,2', b: '"q"' }];
-      const csv = buildCSV(h, rows, (r, k) => (r as any)[k]);
+      const csv = buildCSV(h, rows, (r, k) => (r)[k]);
       if (!csv.includes('\n')) throw new Error('CSV に改行が含まれません');
       if (!csv.includes('"1,2"')) throw new Error('カンマのエスケープに失敗');
       if (!csv.includes('""q""')) throw new Error('ダブルクォートのエスケープに失敗');
@@ -530,7 +530,7 @@ export default function App() {
       logs.push('比率しきい値: OK');
 
       setTestReport([`✅ セルフテスト成功 (${new Date().toLocaleString()})`, ...logs]);
-    } catch (e: any) {
+    } catch (e) {
       setTestReport([`❌ セルフテスト失敗: ${e?.message}`]);
       // 続行は可能
     }
