@@ -44,7 +44,10 @@
       "Bash(npm search:*)",
       "Bash(chmod:*)",
       "Bash(curl:*)",
-      "Bash(md5:*)"
+      "Bash(md5:*)",
+      "mcp__playwright__browser_navigate",
+      "Bash(sed:*)",
+      "mcp__playwright__browser_snapshot"
     ],
     "deny": [],
     "ask": []
