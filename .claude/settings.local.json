@@ -47,7 +47,13 @@
       "Bash(md5:*)",
       "mcp__playwright__browser_navigate",
       "Bash(sed:*)",
-      "mcp__playwright__browser_snapshot"
+      "mcp__playwright__browser_snapshot",
+      "mcp__playwright__browser_console_messages",
+      "Bash(python3:*)",
+      "Bash(cat:*)",
+      "mcp__playwright__browser_close",
+      "Bash(npx prettier:*)",
+      "mcp__playwright__browser_take_screenshot"
     ],
     "deny": [],
     "ask": []
