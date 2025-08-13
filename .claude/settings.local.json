@@ -40,7 +40,11 @@
       "mcp__serena__replace_regex",
       "Bash(vercel:*)",
       "Bash(cp:*)",
-      "Bash(timeout:*)"
+      "Bash(timeout:*)",
+      "Bash(npm search:*)",
+      "Bash(chmod:*)",
+      "Bash(curl:*)",
+      "Bash(md5:*)"
     ],
     "deny": [],
     "ask": []
