@@ -1,0 +1,14 @@
+{
+  "name": "youtube-analytics-tool",
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "framework": null,
+  "routes": [
+    {
+      "src": "/(.*)",
+      "headers": {
+        "Cache-Control": "s-maxage=3600"
+      }
+    }
+  ]
+}
