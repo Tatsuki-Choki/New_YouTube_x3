@@ -138,6 +138,13 @@ function numberFormat(n) {
   return n.toLocaleString();
 }
 
+// 日本語形式の日付表示（年月日）
+function dateFormatJapanese(dateString) {
+  if (!dateString) return "-";
+  const date = new Date(dateString);
+  return `${date.getFullYear()}年${date.getMonth() + 1}月${date.getDate()}日`;
+}
+
 // CSV生成（テスト可能な純関数）
 function buildCSV(headers, rows, selector) {
   const escape = (val) => {
@@ -871,7 +878,7 @@ function App() {
           <div className="flex items-center gap-1">
             <span className="text-neutral-500">公開:</span>
             <span className="font-medium">
-              {new Date(video.publishedAt).toLocaleDateString()}
+              {dateFormatJapanese(video.publishedAt)}
             </span>
           </div>
         </div>
@@ -1383,7 +1390,7 @@ function App() {
                   </span>
                 </th>
                 <th 
-                  className="p-2 text-right font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
+                  className="p-2 text-center font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
                   style={{ minWidth: "100px" }}
                   onClick={() => handleSort('likeCount')}
                 >
@@ -1464,8 +1471,8 @@ function App() {
                         </span>
                       ) : '-'}
                     </td>
-                    <td className="text-right">{v.likeCount !== undefined ? numberFormat(v.likeCount) : "-"}</td>
-                    <td>{new Date(v.publishedAt).toLocaleDateString()}</td>
+                    <td className="text-center">{v.likeCount !== undefined ? numberFormat(v.likeCount) : "-"}</td>
+                    <td>{dateFormatJapanese(v.publishedAt)}</td>
                     <td className="text-center">{v.country || "-"}</td>
                     <td>
                       <div className="flex flex-col gap-1">
