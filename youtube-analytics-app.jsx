@@ -263,6 +263,9 @@ function App() {
   
   // サムネイル拡大表示の状態管理
   const [expandedThumbnail, setExpandedThumbnail] = useState(null);
+  
+  // コメント展開状態の管理（動画IDごとに展開/折りたたみ状態を保持）
+  const [expandedComments, setExpandedComments] = useState({});
 
   // 初期ロードでlocalStorageからAPIキー復元 + セルフテスト
   useEffect(() => {
@@ -810,8 +813,129 @@ function App() {
     );
   };
 
+  // コメント一覧表示コンポーネント
+  const CommentsList = ({ comments, videoId, isExpanded, onToggle }) => {
+    if (!comments || comments.length === 0) return null;
+    
+    // 日付フォーマット関数
+    const formatCommentDate = (dateString) => {
+      const date = new Date(dateString);
+      const now = new Date();
+      const diffMs = now - date;
+      const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+      
+      if (diffDays === 0) {
+        const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+        if (diffHours === 0) {
+          const diffMinutes = Math.floor(diffMs / (1000 * 60));
+          return `${diffMinutes}分前`;
+        }
+        return `${diffHours}時間前`;
+      } else if (diffDays < 7) {
+        return `${diffDays}日前`;
+      } else if (diffDays < 30) {
+        return `${Math.floor(diffDays / 7)}週間前`;
+      } else if (diffDays < 365) {
+        return `${Math.floor(diffDays / 30)}ヶ月前`;
+      } else {
+        return `${Math.floor(diffDays / 365)}年前`;
+      }
+    };
+    
+    return (
+      <div className="w-full">
+        <button
+          onClick={onToggle}
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg hover:bg-neutral-100 transition-colors text-sm font-medium"
+          style={{ color: COLORS.text }}
+        >
+          <svg 
+            className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            fill="none" 
+            stroke="currentColor" 
+            viewBox="0 0 24 24"
+          >
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+          </svg>
+          <span>コメントを表示 ({comments.length}件)</span>
+        </button>
+        
+        {isExpanded && (
+          <div 
+            className="mt-2 border rounded-lg p-3 bg-neutral-50 overflow-y-auto"
+            style={{ 
+              borderColor: COLORS.line,
+              maxHeight: '400px'
+            }}
+          >
+            <div className="space-y-3">
+              {comments.map((comment, index) => (
+                <div 
+                  key={comment.commentId}
+                  className={`pb-3 ${index !== comments.length - 1 ? 'border-b' : ''}`}
+                  style={{ borderColor: COLORS.line }}
+                >
+                  {/* 返信の場合はインデント */}
+                  <div className={comment.parentId ? 'ml-6' : ''}>
+                    <div className="flex items-start gap-2">
+                      {/* アバタープレースホルダー */}
+                      <div 
+                        className="w-8 h-8 rounded-full bg-neutral-300 flex-shrink-0 flex items-center justify-center text-xs font-medium text-white"
+                      >
+                        {comment.authorDisplayName.charAt(0).toUpperCase()}
+                      </div>
+                      
+                      <div className="flex-1 min-w-0">
+                        {/* ヘッダー */}
+                        <div className="flex items-center gap-2 mb-1">
+                          <span className="font-medium text-sm">{comment.authorDisplayName}</span>
+                          <span className="text-xs text-neutral-500">{formatCommentDate(comment.publishedAt)}</span>
+                          {comment.parentId && (
+                            <span className="text-xs text-neutral-500">└ 返信</span>
+                          )}
+                        </div>
+                        
+                        {/* コメント本文 */}
+                        <p className="text-sm text-neutral-800 whitespace-pre-wrap break-words">
+                          {comment.textOriginal}
+                        </p>
+                        
+                        {/* いいね数 */}
+                        {comment.likeCount > 0 && (
+                          <div className="mt-1 flex items-center gap-1">
+                            <svg className="w-4 h-4 text-neutral-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                                d="M14 10h4.764a2 2 0 011.789 2.894l-3.5 7A2 2 0 0115.263 21h-4.017c-.163 0-.326-.02-.485-.06L7 20m7-10V5a2 2 0 00-2-2h-.095c-.5 0-.905.405-.905.905 0 .714-.211 1.412-.608 2.006L7 11v9m7-10h-2M7 20H5a2 2 0 01-2-2v-6a2 2 0 012-2h2.5" />
+                            </svg>
+                            <span className="text-xs text-neutral-500">{comment.likeCount}</span>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+            
+            {/* フッター */}
+            <div className="mt-3 pt-3 border-t flex items-center justify-between" style={{ borderColor: COLORS.line }}>
+              <span className="text-xs text-neutral-500">合計 {comments.length} 件のコメント</span>
+              <button
+                onClick={() => exportCommentsCSV(videoId)}
+                className="text-xs px-3 py-1 rounded-lg border hover:bg-white transition-colors"
+                style={{ borderColor: COLORS.line }}
+              >
+                CSV出力
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   // モバイル用動画カードコンポーネント
-  const MobileVideoCard = ({ video, selected, onSelectChange, onFetchComments, commentsLoading, comments }) => (
+  const MobileVideoCard = ({ video, selected, onSelectChange, onFetchComments, commentsLoading, comments, expandedComments, setExpandedComments }) => (
     <div className="bg-white rounded-lg shadow-sm border mb-4" style={{ borderColor: COLORS.line }}>
       {/* サムネイル */}
       <a href={video.videoUrl} target="_blank" rel="noopener noreferrer" className="block">
@@ -906,11 +1030,21 @@ function App() {
           </button>
         </div>
         
-        {/* コメント数表示 */}
+        {/* コメント数表示とコメント一覧 */}
         {comments?.length > 0 && (
-          <div className="mt-2 text-sm text-neutral-500 text-center">
-            {comments.length}件のコメント取得済み
-          </div>
+          <>
+            <div className="mt-2 text-sm text-neutral-500 text-center">
+              {comments.length}件のコメント取得済み
+            </div>
+            <div className="mt-3 border-t pt-3" style={{ borderColor: COLORS.line }}>
+              <CommentsList 
+                comments={comments}
+                videoId={video.videoId}
+                isExpanded={expandedComments[video.videoId]}
+                onToggle={() => setExpandedComments(prev => ({ ...prev, [video.videoId]: !prev[video.videoId] }))}
+              />
+            </div>
+          </>
         )}
       </div>
     </div>
@@ -1340,6 +1474,8 @@ function App() {
                 comments={commentsByVideo[v.videoId]}
                 commentsLoading={commentsLoadingFor === v.videoId}
                 onFetchComments={() => fetchAllComments(v.videoId)}
+                expandedComments={expandedComments}
+                setExpandedComments={setExpandedComments}
               />
             ))}
           </div>
@@ -1403,6 +1539,7 @@ function App() {
                 </th>
                 <th 
                   className="p-2 text-left font-medium cursor-pointer hover:bg-neutral-100 transition-colors"
+                  style={{ minWidth: "120px" }}
                   onClick={() => handleSort('publishedAt')}
                 >
                   公開日
@@ -1413,7 +1550,7 @@ function App() {
                   </span>
                 </th>
                 <th className="p-2 text-center font-medium">国</th>
-                <th className="p-2 text-left font-medium" style={{ minWidth: "150px" }}>コメント取得</th>
+                <th className="p-2 text-left font-medium" style={{ minWidth: "100px" }}>コメント</th>
               </tr>
             </thead>
             <tbody>
@@ -1472,32 +1609,68 @@ function App() {
                       ) : '-'}
                     </td>
                     <td className="text-center">{v.likeCount !== undefined ? numberFormat(v.likeCount) : "-"}</td>
-                    <td>{dateFormatJapanese(v.publishedAt)}</td>
+                    <td className="whitespace-nowrap">{dateFormatJapanese(v.publishedAt)}</td>
                     <td className="text-center">{v.country || "-"}</td>
                     <td>
-                      <div className="flex flex-col gap-1">
+                      <div className="flex flex-col gap-0.5">
                         <button
                           onClick={() => fetchAllComments(v.videoId)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg text-white disabled:opacity-50"
+                          className="inline-flex items-center justify-center px-2 py-1 rounded text-white text-xs disabled:opacity-50"
                           style={{ backgroundColor: "#2B2B2B" }}
                           disabled={commentsLoadingFor === v.videoId}
                         >
-                          {commentsLoadingFor === v.videoId ? "読込中..." : "取得"}
+                          {commentsLoadingFor === v.videoId ? "読込中" : "取得"}
                         </button>
-                        <button
-                          onClick={() => exportCommentsCSV(v.videoId)}
-                          className="inline-flex items-center gap-1 px-3 py-1.5 rounded-lg border disabled:opacity-50"
-                          style={{ borderColor: COLORS.line }}
-                          disabled={!commentsByVideo[v.videoId]?.length}
-                        >
-                          ↓ CSV
-                        </button>
+                        {commentsByVideo[v.videoId]?.length > 0 && (
+                          <>
+                            <button
+                              onClick={() => setExpandedComments(prev => ({ ...prev, [v.videoId]: !prev[v.videoId] }))}
+                              className="inline-flex items-center justify-center gap-1 px-2 py-1 rounded border hover:bg-neutral-50 text-xs"
+                              style={{ borderColor: COLORS.line }}
+                            >
+                              <svg 
+                                className={`w-3 h-3 transition-transform ${expandedComments[v.videoId] ? 'rotate-180' : ''}`}
+                                fill="none" 
+                                stroke="currentColor" 
+                                viewBox="0 0 24 24"
+                              >
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                              </svg>
+                              表示
+                            </button>
+                            <button
+                              onClick={() => exportCommentsCSV(v.videoId)}
+                              className="inline-flex items-center justify-center px-2 py-1 rounded border disabled:opacity-50 text-xs"
+                              style={{ borderColor: COLORS.line }}
+                              disabled={!commentsByVideo[v.videoId]?.length}
+                            >
+                              CSV
+                            </button>
+                          </>
+                        )}
                       </div>
                       {commentsByVideo[v.videoId]?.length ? (
-                        <div className="text-xs text-neutral-500 mt-1">{commentsByVideo[v.videoId].length}件のコメントを取得済み</div>
+                        <div className="text-[10px] text-neutral-500 mt-0.5">{commentsByVideo[v.videoId].length}件</div>
                       ) : null}
                     </td>
                   </tr>
+                  {/* コメント一覧の展開行 */}
+                  {expandedComments[v.videoId] && commentsByVideo[v.videoId]?.length > 0 && (
+                    <tr>
+                      <td colSpan="12" className="p-0">
+                        <div className="bg-neutral-50 border-t border-b" style={{ borderColor: COLORS.line }}>
+                          <div className="p-4">
+                            <CommentsList 
+                              comments={commentsByVideo[v.videoId]}
+                              videoId={v.videoId}
+                              isExpanded={true}
+                              onToggle={() => setExpandedComments(prev => ({ ...prev, [v.videoId]: false }))}
+                            />
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  )}
                 </React.Fragment>
               ))}
             </tbody>
