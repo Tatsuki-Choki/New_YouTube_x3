@@ -2,7 +2,13 @@ const { useEffect, useMemo, useState, useRef } = React;
 
 // --- レスポンシブ判定フック ---
 const useIsMobile = () => {
-  const [isMobile, setIsMobile] = useState(false);
+  // 初期値を実際の画面幅に基づいて設定
+  const [isMobile, setIsMobile] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.innerWidth < 768;
+    }
+    return false;
+  });
   
   useEffect(() => {
     const checkMobile = () => {
@@ -205,6 +211,7 @@ function qualifiesByRatio(viewCount, subscriberCount, hidden, multiple) {
 
 // --- メインコンポーネント ---
 function App() {
+  const isMobile = useIsMobile();
   const [apiKey, setApiKey] = useState("");
   const [keyVerified, setKeyVerified] = useState(false);
   const [verifying, setVerifying] = useState(false);
@@ -235,6 +242,20 @@ function App() {
   const [commentsByVideo, setCommentsByVideo] = useState({});
   const [selected, setSelected] = useState({});
   const [testReport, setTestReport] = useState([]); // 簡易テストレポート
+  const [diagnosticsOpen, setDiagnosticsOpen] = useState(false); // 診断情報の表示/非表示
+  
+  // モバイル用の状態
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [searchExpanded, setSearchExpanded] = useState(false);
+  
+  // ソート機能の状態管理
+  const [sortConfig, setSortConfig] = useState({
+    key: 'viewCount',
+    direction: 'desc'
+  });
+  
+  // サムネイル拡大表示の状態管理
+  const [expandedThumbnail, setExpandedThumbnail] = useState(null);
 
   // 初期ロードでlocalStorageからAPIキー復元 + セルフテスト
   useEffect(() => {
@@ -258,6 +279,51 @@ function App() {
   };
 
   const publishedAfter = useMemo(() => calcPublishedAfter(period), [period]);
+  
+  // ソート機能の実装
+  const handleSort = (key) => {
+    setSortConfig((prev) => {
+      // 同じキーをクリックした場合は方向を切り替え
+      if (prev.key === key) {
+        if (prev.direction === 'desc') {
+          return { key, direction: 'asc' };
+        } else if (prev.direction === 'asc') {
+          // 3回目のクリックでデフォルトに戻る
+          return { key: 'viewCount', direction: 'desc' };
+        }
+      }
+      // 新しいキーの場合は降順から開始
+      return { key, direction: 'desc' };
+    });
+  };
+  
+  // ソート済み動画リストの生成
+  const sortedVideos = useMemo(() => {
+    if (!videos.length) return videos;
+    
+    const sorted = [...videos].sort((a, b) => {
+      const { key, direction } = sortConfig;
+      let aVal = a[key];
+      let bVal = b[key];
+      
+      // null/undefined の処理
+      if (aVal === null || aVal === undefined) aVal = -Infinity;
+      if (bVal === null || bVal === undefined) bVal = -Infinity;
+      
+      // 日付の場合は Date オブジェクトに変換
+      if (key === 'publishedAt') {
+        aVal = new Date(aVal).getTime();
+        bVal = new Date(bVal).getTime();
+      }
+      
+      // 数値比較
+      if (aVal < bVal) return direction === 'asc' ? -1 : 1;
+      if (aVal > bVal) return direction === 'asc' ? 1 : -1;
+      return 0;
+    });
+    
+    return sorted;
+  }, [videos, sortConfig]);
 
   async function runSearch() {
     setLoading(true);
@@ -403,6 +469,10 @@ function App() {
             ? "minViews"
             : "none";
           const isShort = isShortByHeuristic(v); // 強化版判定
+          // 拡散率の計算を追加
+          const spreadRate = (subCount && !hidden && subCount > 0) 
+            ? (vc / subCount) 
+            : null;
           return {
             videoId: v.id,
             title: v.snippet?.title || "",
@@ -419,6 +489,7 @@ function App() {
             country: countryCode,
             matchedRule,
             isShort,
+            spreadRate, // 拡散率を追加
           };
         })
         .filter((r) => {
@@ -521,6 +592,7 @@ function App() {
       "publishedAt",
       "viewCount",
       "subscriberCount",
+      "spreadRate",
       "likeCount",
       "country",
       "videoUrl",
@@ -551,6 +623,8 @@ function App() {
             return r.viewCount;
           case "subscriberCount":
             return r.subscriberCount ?? "";
+          case "spreadRate":
+            return r.spreadRate !== null ? r.spreadRate.toFixed(2) : "";
           case "likeCount":
             return r.likeCount ?? "";
           case "country":
@@ -676,14 +750,229 @@ function App() {
     }
   }
 
+  // サムネイル拡大モーダルコンポーネント
+  const ThumbnailModal = ({ video, onClose }) => {
+    // ESCキーで閉じる
+    useEffect(() => {
+      const handleEsc = (e) => {
+        if (e.key === 'Escape') onClose();
+      };
+      window.addEventListener('keydown', handleEsc);
+      return () => window.removeEventListener('keydown', handleEsc);
+    }, [onClose]);
+    
+    if (!video) return null;
+    
+    // 高解像度サムネイルURL生成
+    const getHighResThumbnail = () => {
+      const videoId = video.videoId;
+      // maxresdefault が存在しない場合もあるため、複数の解像度を試す
+      return `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+    };
+    
+    return (
+      <div 
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black bg-opacity-75"
+        onClick={onClose}
+      >
+        <div 
+          className="relative max-w-4xl max-h-[90vh] mx-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <button
+            onClick={onClose}
+            className="absolute top-2 right-2 z-10 w-8 h-8 flex items-center justify-center bg-white rounded-full shadow-lg hover:bg-gray-100"
+          >
+            <span className="text-xl">&times;</span>
+          </button>
+          <img 
+            src={getHighResThumbnail()} 
+            alt={video.title}
+            className="max-w-full max-h-[85vh] rounded-lg shadow-xl"
+            onError={(e) => {
+              // maxresdefault が無い場合は通常のサムネイルにフォールバック
+              e.target.src = video.thumbnailUrl;
+            }}
+          />
+          <div className="mt-2 p-2 bg-white rounded-lg shadow-lg">
+            <p className="text-sm font-medium text-gray-800 line-clamp-2">{video.title}</p>
+            <p className="text-xs text-gray-600 mt-1">{video.channelTitle}</p>
+          </div>
+        </div>
+      </div>
+    );
+  };
+
+  // モバイル用動画カードコンポーネント
+  const MobileVideoCard = ({ video, selected, onSelectChange, onFetchComments, commentsLoading, comments }) => (
+    <div className="bg-white rounded-lg shadow-sm border mb-4" style={{ borderColor: COLORS.line }}>
+      {/* サムネイル */}
+      <a href={video.videoUrl} target="_blank" rel="noopener noreferrer" className="block">
+        <div className="relative w-full" style={{ paddingBottom: '56.25%' }}>
+          <img 
+            src={video.thumbnailUrl} 
+            alt={video.title} 
+            className="absolute inset-0 w-full h-full object-cover rounded-t-lg"
+            loading="lazy"
+          />
+          {video.isShort && (
+            <span className="absolute top-2 left-2 text-xs text-white px-2 py-1 rounded bg-black bg-opacity-70">
+              Shorts
+            </span>
+          )}
+        </div>
+      </a>
+      
+      {/* コンテンツ */}
+      <div className="p-4">
+        {/* タイトル */}
+        <h3 className="font-semibold text-base mb-2 line-clamp-2">{video.title}</h3>
+        
+        {/* チャンネル */}
+        <a 
+          href={video.channelUrl} 
+          target="_blank" 
+          rel="noopener noreferrer" 
+          className="text-sm text-neutral-600 hover:underline block mb-3"
+        >
+          {video.channelTitle}
+        </a>
+        
+        {/* 統計情報 */}
+        <div className="grid grid-cols-2 gap-2 text-sm mb-3">
+          <div className="flex items-center gap-1">
+            <span className="text-neutral-500">再生:</span>
+            <span className="font-medium">{numberFormat(video.viewCount)}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-neutral-500">登録:</span>
+            <span className="font-medium">
+              {video.hiddenSubscriberCount ? "非公開" : numberFormat(video.subscriberCount)}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-neutral-500">拡散率:</span>
+            <span className="font-medium">
+              {video.spreadRate !== null ? (
+                <span style={{ 
+                  color: video.spreadRate < 1 ? '#ef4444' : video.spreadRate >= 3 ? '#10b981' : '#0F0F0F' 
+                }}>
+                  {video.spreadRate.toFixed(2)}倍
+                </span>
+              ) : '-'}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-neutral-500">高評価:</span>
+            <span className="font-medium">
+              {video.likeCount !== undefined ? numberFormat(video.likeCount) : "-"}
+            </span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="text-neutral-500">公開:</span>
+            <span className="font-medium">
+              {new Date(video.publishedAt).toLocaleDateString()}
+            </span>
+          </div>
+        </div>
+        
+        {/* アクション */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => onSelectChange(!selected)}
+            className={`flex-1 py-3 px-4 rounded-lg font-medium transition-colors ${
+              selected 
+                ? 'bg-blue-500 text-white' 
+                : 'bg-neutral-100 text-neutral-700'
+            }`}
+            style={{ minHeight: '44px' }}
+          >
+            {selected ? '選択済み' : '選択'}
+          </button>
+          <button
+            onClick={onFetchComments}
+            className="flex-1 py-3 px-4 rounded-lg text-white font-medium disabled:opacity-50"
+            style={{ backgroundColor: "#2B2B2B", minHeight: '44px' }}
+            disabled={commentsLoading}
+          >
+            {commentsLoading ? "読込中..." : "コメント"}
+          </button>
+        </div>
+        
+        {/* コメント数表示 */}
+        {comments?.length > 0 && (
+          <div className="mt-2 text-sm text-neutral-500 text-center">
+            {comments.length}件のコメント取得済み
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div className="min-h-screen" style={{ backgroundColor: COLORS.bg, color: COLORS.text }}>
-      {/* ヘッダー（APIキー入力を配置） */}
+      {/* サムネイル拡大モーダル */}
+      {expandedThumbnail && (
+        <ThumbnailModal 
+          video={expandedThumbnail} 
+          onClose={() => setExpandedThumbnail(null)}
+        />
+      )}
+      
+      {/* レスポンシブヘッダー */}
       <header className="sticky top-0 z-10 border-b bg-white" style={{ borderColor: COLORS.line }}>
-        <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
-          <div className="w-7 h-7 rounded-sm" style={{ backgroundColor: COLORS.accent }} />
-          <h1 className="text-xl font-semibold">YouTube運用支援ツール</h1>
-          <span className="ml-2 text-sm text-neutral-500">MVP</span>
+        {isMobile ? (
+          // モバイルヘッダー
+          <div className="px-4 py-3">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <div className="w-6 h-6 rounded-sm" style={{ backgroundColor: COLORS.accent }} />
+                <h1 className="text-lg font-semibold">YouTube分析</h1>
+              </div>
+              <button
+                onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
+                className="p-2 rounded-lg hover:bg-neutral-100"
+              >
+                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} 
+                    d={mobileMenuOpen ? "M6 18L18 6M6 6l12 12" : "M4 6h16M4 12h16M4 18h16"} />
+                </svg>
+              </button>
+            </div>
+            
+            {/* APIキー入力（展開時） */}
+            {mobileMenuOpen && (
+              <div className="border-t pt-3 mt-3" style={{ borderColor: COLORS.line }}>
+                <input
+                  className="w-full border rounded-lg px-3 py-2 text-sm mb-2"
+                  style={{ borderColor: COLORS.line }}
+                  type="password"
+                  placeholder="APIキーを入力"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                />
+                <button
+                  onClick={onSaveKey}
+                  className="w-full py-2 rounded-lg text-white text-sm font-medium"
+                  style={{ backgroundColor: COLORS.accent }}
+                >
+                  {verifying ? "確認中..." : "保存"}
+                </button>
+                {keyVerified && (
+                  <div className="text-center text-sm text-green-600 mt-2">APIキー有効</div>
+                )}
+                {verifyError && (
+                  <div className="text-center text-sm text-red-600 mt-2">{verifyError}</div>
+                )}
+              </div>
+            )}
+          </div>
+        ) : (
+          // デスクトップヘッダー（既存）
+          <div className="mx-auto max-w-6xl px-4 py-3 flex items-center gap-3">
+            <div className="w-7 h-7 rounded-sm" style={{ backgroundColor: COLORS.accent }} />
+            <h1 className="text-xl font-semibold">YouTube運用支援ツール</h1>
+            <span className="ml-2 text-sm text-neutral-500">MVP</span>
           <div className="ml-auto flex items-center gap-2">
             <input
               className="border rounded-lg px-3 py-1.5 text-sm focus:outline-none w-64"
@@ -707,17 +996,130 @@ function App() {
             )}
           </div>
         </div>
+        )}
         {verifyError && (
           <div className="mx-auto max-w-6xl px-4 pb-2 text-sm text-red-600">{verifyError}</div>
         )}
       </header>
 
       {/* 検索カード */}
-      <section className="mx-auto max-w-6xl px-4 py-6">
-        <div className="border rounded-xl p-4" style={{ borderColor: COLORS.line }}>
-          <div className="flex items-center gap-2 mb-3">
-            <h2 className="text-lg font-semibold">検索条件</h2>
+      <section className={isMobile ? "px-4 py-4" : "mx-auto max-w-6xl px-4 py-6"}>
+        {isMobile ? (
+          // モバイル用検索UI
+          <div className="bg-white rounded-lg border p-4 mb-4" style={{ borderColor: COLORS.line }}>
+            <h2 className="text-base font-semibold mb-4">検索条件</h2>
+            
+            {/* 常に表示する主要項目 */}
+            <div className="space-y-3">
+              {/* キーワード */}
+              <div>
+                <label className="block text-sm font-medium mb-1">キーワード</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                  style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                  placeholder="例: 薄毛 対策"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                />
+              </div>
+              
+              {/* 最低再生数 */}
+              <div>
+                <label className="block text-sm font-medium mb-1">最低再生数</label>
+                <input
+                  className="w-full border rounded-lg px-3 py-2.5 text-sm"
+                  style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                  type="number"
+                  placeholder="10000"
+                  value={minViews}
+                  onChange={(e) => setMinViews(e.target.value)}
+                />
+              </div>
+                
+                {/* その他の設定 */}
+                <details className="border-t pt-3" style={{ borderColor: COLORS.line }}>
+                  <summary className="text-sm font-medium cursor-pointer">詳細設定</summary>
+                  <div className="mt-3 space-y-3">
+                    {/* 国指定 */}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">国</label>
+                      <select
+                        className="w-full border rounded-lg px-3 py-2.5 text-sm bg-white"
+                        style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                        value={country}
+                        onChange={(e) => setCountry(e.target.value)}
+                      >
+                        {COUNTRY_OPTIONS.map(opt => (
+                          <option key={opt.code} value={opt.code}>{opt.label}</option>
+                        ))}
+                      </select>
+                    </div>
+                    
+                    {/* 期間 */}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">期間</label>
+                      <select
+                        className="w-full border rounded-lg px-3 py-2.5 text-sm bg-white"
+                        style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                        value={period}
+                        onChange={(e) => setPeriod(e.target.value)}
+                      >
+                        <option value="3y">3年以内</option>
+                        <option value="2y">2年以内</option>
+                        <option value="1y">1年以内</option>
+                        <option value="6m">半年以内</option>
+                      </select>
+                    </div>
+                    
+                    {/* ショート */}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">ショート</label>
+                      <select
+                        className="w-full border rounded-lg px-3 py-2.5 text-sm bg-white"
+                        style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                        value={shortsMode}
+                        onChange={(e) => setShortsMode(e.target.value)}
+                      >
+                        <option value="exclude">除外</option>
+                        <option value="include">含める</option>
+                        <option value="only">のみ</option>
+                      </select>
+                    </div>
+                    
+                    {/* 比率 */}
+                    <div>
+                      <label className="block text-sm font-medium mb-1">登録者比</label>
+                      <select
+                        className="w-full border rounded-lg px-3 py-2.5 text-sm bg-white"
+                        style={{ borderColor: COLORS.line, minHeight: '44px' }}
+                        value={ratioThreshold}
+                        onChange={(e) => setRatioThreshold(Number(e.target.value))}
+                      >
+                        <option value={3}>3倍以上</option>
+                        <option value={2}>2倍以上</option>
+                        <option value={1}>1倍以上</option>
+                      </select>
+                    </div>
+                  </div>
+                </details>
+                
+                {/* 検索ボタン */}
+                <button
+                  onClick={runSearch}
+                  className="w-full py-3 rounded-lg text-white font-medium"
+                  style={{ backgroundColor: COLORS.accent, minHeight: '44px' }}
+                  disabled={loading}
+                >
+                  {loading ? "検索中..." : "検索"}
+                </button>
+              </div>
           </div>
+        ) : (
+          // デスクトップ用検索UI（既存）
+          <div className="border rounded-xl p-4" style={{ borderColor: COLORS.line }}>
+            <div className="flex items-center gap-2 mb-3">
+              <h2 className="text-lg font-semibold">検索条件</h2>
+            </div>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
             <div>
               <label className="block text-sm font-medium mb-1">キーワード</label>
@@ -846,6 +1248,7 @@ function App() {
           </div>
           {error && <div className="mt-3 text-sm text-red-600">{error}</div>}
         </div>
+        )}
       </section>
 
       {/* 結果一覧 */}
@@ -861,7 +1264,7 @@ function App() {
                   <span>検索結果: {loadingStats.totalFetched}件取得 → {loadingStats.totalFiltered}件表示</span>
                 )}
               </div>
-              {!loading && videos.length > 0 && (
+              {!loading && videos.length > 0 && !isMobile && (
                 <div className="flex items-center gap-2">
                   <button
                     onClick={() => {
@@ -885,30 +1288,135 @@ function App() {
             </div>
           </div>
         )}
-        <div className="border rounded-xl overflow-hidden" style={{ borderColor: COLORS.line }}>
-          <table className="w-full text-sm">
+        
+        {/* モバイル用ソートセレクター */}
+        {isMobile && videos.length > 0 && !loading && (
+          <div className="mb-4 flex items-center gap-2">
+            <label className="text-sm font-medium">並び替え:</label>
+            <select
+              className="flex-1 border rounded-lg px-3 py-2 text-sm bg-white"
+              style={{ borderColor: COLORS.line }}
+              value={`${sortConfig.key}-${sortConfig.direction}`}
+              onChange={(e) => {
+                const [key, direction] = e.target.value.split('-');
+                setSortConfig({ key, direction });
+              }}
+            >
+              <option value="viewCount-desc">再生数 (高い順)</option>
+              <option value="viewCount-asc">再生数 (低い順)</option>
+              <option value="subscriberCount-desc">登録者数 (多い順)</option>
+              <option value="subscriberCount-asc">登録者数 (少ない順)</option>
+              <option value="spreadRate-desc">拡散率 (高い順)</option>
+              <option value="spreadRate-asc">拡散率 (低い順)</option>
+              <option value="likeCount-desc">高評価 (多い順)</option>
+              <option value="likeCount-asc">高評価 (少ない順)</option>
+              <option value="publishedAt-desc">公開日 (新しい順)</option>
+              <option value="publishedAt-asc">公開日 (古い順)</option>
+            </select>
+          </div>
+        )}
+        {isMobile ? (
+          // モバイル用カードレイアウト
+          <div className="space-y-3">
+            {loading && (
+              <div className="py-8 text-center text-neutral-500">読み込み中...</div>
+            )}
+            {!loading && videos.length === 0 && (
+              <div className="py-8 text-center text-neutral-500">結果はありません。</div>
+            )}
+            {!loading && sortedVideos.map(v => (
+              <MobileVideoCard 
+                key={v.videoId}
+                video={v}
+                selected={selected[v.videoId]}
+                onSelectChange={(checked) => setSelected(prev => ({ ...prev, [v.videoId]: checked }))}
+                comments={commentsByVideo[v.videoId]}
+                commentsLoading={commentsLoadingFor === v.videoId}
+                onFetchComments={() => fetchAllComments(v.videoId)}
+              />
+            ))}
+          </div>
+        ) : (
+          // デスクトップ用テーブルレイアウト
+          <div className="border rounded-xl overflow-hidden" style={{ borderColor: COLORS.line }}>
+            <table className="w-full text-sm">
             <thead className="bg-neutral-50 border-b" style={{ borderColor: COLORS.line }}>
               <tr>
                 <th className="p-2 text-left font-medium"></th>
                 <th className="p-2 text-left font-medium">サムネ</th>
                 <th className="p-2 text-left font-medium">タイトル</th>
                 <th className="p-2 text-left font-medium">チャンネル</th>
-                <th className="p-2 text-right font-medium" style={{ minWidth: "100px" }}>再生数</th>
-                <th className="p-2 text-right font-medium" style={{ minWidth: "100px" }}>登録者数</th>
-                <th className="p-2 text-right font-medium" style={{ minWidth: "100px" }}>高評価</th>
-                <th className="p-2 text-left font-medium">公開日</th>
+                <th 
+                  className="p-2 text-right font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
+                  style={{ minWidth: "100px" }}
+                  onClick={() => handleSort('viewCount')}
+                >
+                  再生数
+                  <span className="ml-1" style={{ 
+                    color: sortConfig.key === 'viewCount' ? '#0F0F0F' : '#9CA3AF' 
+                  }}>
+                    {sortConfig.key === 'viewCount' && sortConfig.direction === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
+                <th 
+                  className="p-2 text-right font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
+                  style={{ minWidth: "100px" }}
+                  onClick={() => handleSort('subscriberCount')}
+                >
+                  登録者数
+                  <span className="ml-1" style={{ 
+                    color: sortConfig.key === 'subscriberCount' ? '#0F0F0F' : '#9CA3AF' 
+                  }}>
+                    {sortConfig.key === 'subscriberCount' && sortConfig.direction === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
+                <th 
+                  className="p-2 text-right font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
+                  style={{ minWidth: "100px" }}
+                  onClick={() => handleSort('spreadRate')}
+                >
+                  拡散率
+                  <span className="ml-1" style={{ 
+                    color: sortConfig.key === 'spreadRate' ? '#0F0F0F' : '#9CA3AF' 
+                  }}>
+                    {sortConfig.key === 'spreadRate' && sortConfig.direction === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
+                <th 
+                  className="p-2 text-right font-medium cursor-pointer hover:bg-neutral-100 transition-colors" 
+                  style={{ minWidth: "100px" }}
+                  onClick={() => handleSort('likeCount')}
+                >
+                  高評価
+                  <span className="ml-1" style={{ 
+                    color: sortConfig.key === 'likeCount' ? '#0F0F0F' : '#9CA3AF' 
+                  }}>
+                    {sortConfig.key === 'likeCount' && sortConfig.direction === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
+                <th 
+                  className="p-2 text-left font-medium cursor-pointer hover:bg-neutral-100 transition-colors"
+                  onClick={() => handleSort('publishedAt')}
+                >
+                  公開日
+                  <span className="ml-1" style={{ 
+                    color: sortConfig.key === 'publishedAt' ? '#0F0F0F' : '#9CA3AF' 
+                  }}>
+                    {sortConfig.key === 'publishedAt' && sortConfig.direction === 'asc' ? '▲' : '▼'}
+                  </span>
+                </th>
                 <th className="p-2 text-center font-medium">国</th>
                 <th className="p-2 text-left font-medium" style={{ minWidth: "150px" }}>コメント取得</th>
               </tr>
             </thead>
             <tbody>
               {loading && (
-                <tr><td colSpan="9" className="py-8 text-center text-neutral-500">読み込み中...</td></tr>
+                <tr><td colSpan="11" className="py-8 text-center text-neutral-500">読み込み中...</td></tr>
               )}
               {!loading && videos.length === 0 && (
-                <tr><td colSpan="9" className="py-8 text-center text-neutral-500">結果はありません。</td></tr>
+                <tr><td colSpan="11" className="py-8 text-center text-neutral-500">結果はありません。</td></tr>
               )}
-              {!loading && videos.map(v => (
+              {!loading && sortedVideos.map(v => (
                 <React.Fragment key={v.videoId}>
                   <tr key={v.videoId} className="border-t hover:bg-neutral-50 transition-colors" style={{ borderColor: COLORS.line }}>
                     <td className="p-2">
@@ -919,13 +1427,24 @@ function App() {
                         className="w-4 h-4"
                       />
                     </td>
-                    <td>
-                      <a href={v.videoUrl} target="_blank" rel="noopener noreferrer" className="block">
-                        {/* 16:9 アスペクト比でサムネ固定 */}
-                        <div className="relative w-20 h-12 bg-neutral-200 rounded overflow-hidden">
-                          <img src={v.thumbnailUrl} alt={v.title} className="w-full h-full object-cover" />
-                        </div>
-                      </a>
+                    <td className="p-2">
+                      <div className="relative bg-neutral-200 rounded overflow-hidden" style={{ width: '120px', height: '68px' }}>
+                        <img 
+                          src={v.thumbnailUrl} 
+                          alt={v.title} 
+                          className="w-full h-full object-cover cursor-pointer hover:opacity-90 transition-opacity"
+                          onClick={() => setExpandedThumbnail(v)}
+                        />
+                        <a 
+                          href={v.videoUrl} 
+                          target="_blank" 
+                          rel="noopener noreferrer" 
+                          className="absolute bottom-1 right-1 bg-black bg-opacity-60 text-white text-xs px-1.5 py-0.5 rounded hover:bg-opacity-80"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          ▶
+                        </a>
+                      </div>
                     </td>
                     <td className="px-4 font-medium text-neutral-800">
                       {v.title}
@@ -936,6 +1455,15 @@ function App() {
                     </td>
                     <td className="text-right">{numberFormat(v.viewCount)}</td>
                     <td className="text-right">{v.hiddenSubscriberCount ? "非公開" : numberFormat(v.subscriberCount)}</td>
+                    <td className="text-right">
+                      {v.spreadRate !== null ? (
+                        <span style={{ 
+                          color: v.spreadRate < 1 ? '#ef4444' : v.spreadRate >= 3 ? '#10b981' : '#0F0F0F' 
+                        }}>
+                          {v.spreadRate.toFixed(2)}倍
+                        </span>
+                      ) : '-'}
+                    </td>
                     <td className="text-right">{v.likeCount !== undefined ? numberFormat(v.likeCount) : "-"}</td>
                     <td>{new Date(v.publishedAt).toLocaleDateString()}</td>
                     <td className="text-center">{v.country || "-"}</td>
@@ -963,41 +1491,39 @@ function App() {
                       ) : null}
                     </td>
                   </tr>
-                  {commentsByVideo[v.videoId]?.length ? (
-                    <tr>
-                      <td colSpan="9" className="bg-neutral-50 p-4">
-                        <div className="max-h-64 overflow-y-auto space-y-2">
-                          {commentsByVideo[v.videoId].map((c) => (
-                            <div key={c.commentId} className="border rounded-lg p-3 bg-white" style={{ borderColor: COLORS.line }}>
-                              <div className="flex items-center justify-between text-xs text-neutral-500 mb-1">
-                                <span className="font-medium">{c.authorDisplayName}</span>
-                                <span>{new Date(c.publishedAt).toLocaleString()}</span>
-                              </div>
-                              <p className="text-sm text-neutral-700">{c.textOriginal}</p>
-                              <div className="text-xs text-neutral-500 mt-1">いいね: {numberFormat(c.likeCount)} / ID: {c.commentId}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </td>
-                    </tr>
-                  ) : null}
                 </React.Fragment>
               ))}
             </tbody>
-          </table>
-        </div>
+            </table>
+          </div>
+        )}
       </section>
 
       <footer className="py-4 text-center text-sm text-neutral-500">
         © {new Date().getFullYear()} YouTube運用支援ツール（MVP）
         {testReport.length > 0 && (
-          <div className="mt-4 text-xs text-neutral-400">
-            <div className="font-medium mb-1">Diagnostics</div>
-            <div className="space-y-0.5">
-              {testReport.map((t, i) => (
-                <div key={i}>{t}</div>
-              ))}
-            </div>
+          <div className="mt-4">
+            <button
+              onClick={() => setDiagnosticsOpen(!diagnosticsOpen)}
+              className="text-xs text-neutral-400 hover:text-neutral-500 transition-colors inline-flex items-center gap-1"
+            >
+              <span>Diagnostics</span>
+              <svg 
+                className={`w-3 h-3 transition-transform ${diagnosticsOpen ? 'rotate-180' : ''}`}
+                fill="none" 
+                stroke="currentColor" 
+                viewBox="0 0 24 24"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+              </svg>
+            </button>
+            {diagnosticsOpen && (
+              <div className="mt-2 text-xs text-neutral-400 space-y-0.5">
+                {testReport.map((t, i) => (
+                  <div key={i}>{t}</div>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </footer>
